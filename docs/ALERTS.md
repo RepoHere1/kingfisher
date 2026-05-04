@@ -1,8 +1,8 @@
 # Alert Webhooks
 
 Kingfisher can POST a scan summary (and optionally per-finding details) to one
-or more webhooks when a scan completes — Slack, Microsoft Teams, or any HTTPS
-endpoint that accepts a JSON POST.
+or more webhooks when a scan completes — Slack, Microsoft Teams, Discord,
+Mattermost, Google Chat, or any HTTPS endpoint that accepts a JSON POST.
 
 Alerting is **best-effort**. A bad webhook produces a `WARN` line on stderr and
 *never* changes the scan exit code; this avoids breaking CI when paging
@@ -20,17 +20,36 @@ kingfisher scan ./repo \
   --alert-webhook "$TEAMS_WEBHOOK" \
   --alert-webhook "https://siem.example.com/ingest" \
   --alert-format generic
+
+# Discord webhook (auto-detected from discord.com).
+kingfisher scan ./repo --alert-webhook "$DISCORD_SECURITY_WEBHOOK"
+
+# Mattermost (self-hosted — format must be specified explicitly).
+kingfisher scan ./repo \
+  --alert-webhook "https://mattermost.example.com/hooks/abc123" \
+  --alert-format mattermost
 ```
 
-The format is inferred from the URL host: `*.slack.com` → `slack`,
-`*.office.com` → `teams`, otherwise `generic`. Set `--alert-format` to override.
+The format is inferred from the URL host:
+
+| Host pattern                          | Inferred format |
+|---------------------------------------|-----------------|
+| `*.slack.com`                         | `slack`         |
+| `*.office.com` / `webhook.office.*`   | `teams`         |
+| `discord.com` / `discordapp.com`      | `discord`       |
+| `chat.googleapis.com`                 | `googlechat`    |
+| anything else                         | `generic`       |
+
+Set `--alert-format` to override. Mattermost has no canonical hostname (it is
+always self-hosted), so it is **never** inferred — pass
+`--alert-format mattermost` whenever you target a Mattermost server.
 
 ## Flags
 
 | Flag | Default | Notes |
 |------|---------|-------|
 | `--alert-webhook URL` | *(none, repeatable)* | Destination URL; pass once per webhook. |
-| `--alert-format slack\|teams\|generic` | inferred | Payload shape. |
+| `--alert-format slack\|teams\|generic\|discord\|mattermost\|googlechat` | inferred | Payload shape. |
 | `--alert-on findings\|always` | `findings` | `always` posts even on a clean run. |
 | `--alert-min-confidence low\|medium\|high` | `medium` | Findings below this are dropped from the payload. |
 | `--alert-include-secret` | off | Include the (truncated to ~32 chars) secret value in the payload. |
@@ -74,6 +93,30 @@ red if any active. Facts list active/inactive/unknown counts and the top rules.
 Findings are the same shape as `kingfisher scan --format json` produces, so
 existing JSON consumers work unchanged.
 
+### Discord (Embed)
+
+A single embed with a color-coded sidebar — red on any active credential,
+amber when findings exist but none are verified active, green on a clean run.
+Inline `Active`/`Inactive`/`Unknown` fields, a `Top rules` field, the
+per-finding detail in the embed `description` (capped at 10 entries), and a
+footer with the Kingfisher version.
+
+### Mattermost (Slack-compatible attachments)
+
+Renders as a single attachment with the same red/amber/green sidebar (via the
+legacy Slack `attachments[].color` field). Mattermost ≥ 5.x renders this
+identically; we deliberately use legacy attachments instead of Block Kit
+because Block Kit support in Mattermost is partial. Findings are listed in
+the attachment `text` body, capped at 10 entries.
+
+### Google Chat (cardsV2)
+
+A modern `cardsV2` card with a "Summary" section (`decoratedText` widgets for
+active/inactive/unknown counts and a top-rules paragraph) and a "Findings"
+section (capped at 10 entries). Google Chat does not expose a card-color knob
+in its public webhook API, so severity is conveyed textually — the title is
+prefixed with 🚨 when any active credential is detected.
+
 ## Configuring via `kingfisher.yaml`
 
 CLI flags and config-file webhooks are concatenated. Per-webhook overrides live
@@ -92,6 +135,15 @@ alerts:
       on: always
       min_confidence: medium
       include_secret: false
+    - url: https://discord.com/api/webhooks/123/abcdef
+      format: discord
+      on: findings
+    - url: https://mattermost.example.com/hooks/xxx
+      format: mattermost      # required — never auto-inferred
+      on: findings
+    - url: https://chat.googleapis.com/v1/spaces/AAA/messages?key=k&token=t
+      format: googlechat
+      on: always
 ```
 
 See [`docs/CONFIG.md`](CONFIG.md) for the full config schema.

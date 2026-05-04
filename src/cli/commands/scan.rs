@@ -229,7 +229,10 @@ pub struct ScanArgs {
     pub alert_webhook: Vec<String>,
 
     /// Format for `--alert-webhook` payloads. Default is inferred from the URL
-    /// host (slack.com → slack, *.office.com → teams, otherwise generic).
+    /// host (slack.com → slack, *.office.com → teams, discord.com → discord,
+    /// chat.googleapis.com → googlechat, otherwise generic). Mattermost is
+    /// self-hosted and never inferred — pass `--alert-format mattermost`
+    /// explicitly.
     #[arg(global = true, long = "alert-format", value_name = "FORMAT")]
     pub alert_format: Option<crate::alerts::AlertFormat>,
 

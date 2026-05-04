@@ -309,14 +309,5 @@ strategy:
 Each shard gets its own runner and its own disk budget, and you can upload
 one artifact per shard for triage.
 
-## What's next
-
-- **Catching secrets in pull requests with GitHub Actions** — pre-merge
-  scanning so leaks never reach `main`.
-- **The most common credential types we see leaked in the wild** — what
-  Kingfisher's validation telemetry says about the credential leak landscape.
-- **Docker image scanning** — pulling images directly and scanning every
-  layer for embedded secrets.
-
 If there is a workflow you want us to cover, open an issue at
 [mongodb/kingfisher](https://github.com/mongodb/kingfisher/issues).

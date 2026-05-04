@@ -17,7 +17,7 @@ flags so there are no surprising overrides.
 alerts:
   webhooks:
     - url: https://hooks.slack.com/services/T0/B0/AAA   # required
-      format: slack                                      # slack | teams | generic
+      format: slack                                      # slack | teams | generic | discord | mattermost | googlechat
       on: findings                                       # findings | always
       min_confidence: medium                             # low | medium | high
       include_secret: false                              # default false

@@ -194,14 +194,5 @@ The practical result is that new rules can ship with detection plus
 post-detection response logic, instead of detection today and validation or
 revocation on some later roadmap.
 
-## Next up
-
-- **Catching secrets in pull requests with GitHub Actions** — pre-merge
-  scanning so leaked credentials never reach `main`.
-- **Top leaked credential types we see in the wild** — what validation
-  telemetry says about the credential leak landscape.
-- **Docker image scanning** — pulling and scanning every layer for
-  embedded secrets.
-
 If there is a provider you want validation or revocation support for, open
 an issue at [mongodb/kingfisher](https://github.com/mongodb/kingfisher/issues).

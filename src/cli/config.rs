@@ -8,7 +8,7 @@
 //! alerts:
 //!   webhooks:
 //!     - url: https://hooks.slack.com/services/...
-//!       format: slack          # slack | teams | generic
+//!       format: slack          # slack | teams | generic | discord | mattermost | googlechat
 //!       on: findings           # findings | always
 //!       min_confidence: medium # low | medium | high
 //!       include_secret: false

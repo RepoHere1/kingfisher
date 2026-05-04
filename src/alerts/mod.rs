@@ -15,7 +15,10 @@ use tracing::{debug, info, warn};
 use crate::cli::commands::scan::ConfidenceLevel;
 use crate::reporter::FindingReporterRecord;
 
+pub mod discord;
 pub mod generic;
+pub mod googlechat;
+pub mod mattermost;
 pub mod slack;
 pub mod teams;
 
@@ -47,6 +50,12 @@ pub enum AlertFormat {
     Teams,
     /// Generic JSON envelope (`{ summary, findings }`).
     Generic,
+    /// Discord incoming-webhook (color-coded `embeds`).
+    Discord,
+    /// Mattermost incoming-webhook (Slack-compatible `attachments`).
+    Mattermost,
+    /// Google Chat incoming-webhook (`cardsV2` payload).
+    Googlechat,
 }
 
 impl AlertFormat {
@@ -59,6 +68,10 @@ impl AlertFormat {
             Some(h) if h.contains("office.com") || h.contains("webhook.office") => {
                 AlertFormat::Teams
             }
+            Some(h) if h.contains("discord.com") || h.contains("discordapp.com") => {
+                AlertFormat::Discord
+            }
+            Some(h) if h.contains("chat.googleapis.com") => AlertFormat::Googlechat,
             _ => AlertFormat::Generic,
         }
     }
@@ -192,6 +205,15 @@ pub async fn dispatch(
             AlertFormat::Generic => {
                 generic::build_payload(&summary, &filtered, sink.include_secret)
             }
+            AlertFormat::Discord => {
+                discord::build_payload(&summary, &filtered, sink.include_secret)
+            }
+            AlertFormat::Mattermost => {
+                mattermost::build_payload(&summary, &filtered, sink.include_secret)
+            }
+            AlertFormat::Googlechat => {
+                googlechat::build_payload(&summary, &filtered, sink.include_secret)
+            }
         };
 
         match post(&client, &sink.url, &payload).await {
@@ -272,6 +294,38 @@ mod tests {
     fn infer_format_generic_fallback() {
         assert_eq!(
             AlertFormat::infer_from_url("https://example.com/webhook"),
+            AlertFormat::Generic
+        );
+    }
+
+    #[test]
+    fn infer_format_discord() {
+        assert_eq!(
+            AlertFormat::infer_from_url("https://discord.com/api/webhooks/123/abc"),
+            AlertFormat::Discord
+        );
+        assert_eq!(
+            AlertFormat::infer_from_url("https://discordapp.com/api/webhooks/123/abc"),
+            AlertFormat::Discord
+        );
+    }
+
+    #[test]
+    fn infer_format_googlechat() {
+        assert_eq!(
+            AlertFormat::infer_from_url(
+                "https://chat.googleapis.com/v1/spaces/AAA/messages?key=k&token=t"
+            ),
+            AlertFormat::Googlechat
+        );
+    }
+
+    #[test]
+    fn infer_format_mattermost_falls_back_to_generic_without_override() {
+        // Mattermost is self-hosted with no canonical domain; users must pass
+        // `--alert-format mattermost` explicitly. Inference falls through.
+        assert_eq!(
+            AlertFormat::infer_from_url("https://mattermost.example.com/hooks/abcdef"),
             AlertFormat::Generic
         );
     }
