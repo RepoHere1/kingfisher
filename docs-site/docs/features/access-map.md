@@ -572,6 +572,5 @@ The `kingfisher blast-radius` and `kingfisher blast_radius` aliases also work fo
 ## Notes on access-map generation during `scan --access-map`
 
 - Access-map entries are only recorded for **validated** findings.
-- The `--blast-radius` flag is an alias for `--access-map`. The `kingfisher blast-radius <provider>` subcommand is also an alias for `kingfisher access-map <provider>`.
 - Some providers require extra context that Kingfisher infers from the finding context or validation response (for example, Azure DevOps organization name).
-- Validated Hugging Face, Gitea, Bitbucket, Buildkite, Harness, OpenAI, Anthropic, Salesforce, Weights & Biases, Microsoft Teams, monday.com, Asana, and Pinecone credentials discovered during scans with `--access-map` (or `--blast-radius`) are automatically collected and mapped, matching the existing behavior for other platforms.
+- Validated Hugging Face, Gitea, Bitbucket, Buildkite, Harness, OpenAI, Anthropic, Salesforce, Weights & Biases, Microsoft Teams, monday.com, Asana, and Pinecone credentials discovered during scans with `--access-map` (or the `--blast-radius` alias) are automatically collected and mapped, matching the existing behavior for other platforms.

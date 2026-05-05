@@ -170,9 +170,10 @@ pub struct GlobalArgs {
     pub endpoint_config: Option<PathBuf>,
 
     /// Path to a `kingfisher.yaml` project config file.
-    /// If omitted, Kingfisher walks up from the current working directory
-    /// looking for `kingfisher.yaml`. List-typed config values are concatenated
-    /// onto matching CLI flags; scalar config values are applied only when the
+    ///
+    /// **No auto-discovery** — the file is loaded only when this flag is
+    /// passed explicitly. List-typed config values are concatenated onto
+    /// matching CLI flags; scalar config values are applied only when the
     /// matching `--flag` was not passed (precedence: CLI > env > config >
     /// built-in default). See `docs/CONFIG.md` for the full schema.
     #[arg(global = true, long = "config", value_name = "FILE")]

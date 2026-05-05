@@ -438,11 +438,17 @@ See [FINGERPRINT.md](../features/fingerprints.md) for complete details.
 
 ## Update Checks
 
-Kingfisher automatically queries GitHub for a newer release when it starts and tells you whether an update is available.
+Kingfisher automatically queries GitHub for a newer release when it starts and tells you whether an update is available. The check is informational only — the binary is not modified unless you explicitly opt in.
 
-- **Manual update** – Run `kingfisher update` to update the binary without scanning
+- **Update and exit** – Run `kingfisher self-update` (alias `kingfisher update`) to download the latest release, replace the running binary in place, and exit. No scanning occurs.
 
-- **Disable version checks** – Pass `--no-update-check` to skip both the startup and shutdown checks entirely
+- **Update then run with the new version** – Pass the global `--self-update` flag (alias `--update`) on any scan or other command. If a newer release exists, Kingfisher downloads it, replaces the on-disk binary, and **re-execs into the freshly installed binary** so the current invocation completes with the new code (including the latest detection rules). On Unix this is a true `exec()` (same PID); on Windows the new binary is spawned and the parent exits with its status code. If no update is available, the command runs normally with no extra steps.
+
+- **Disable version checks** – Pass `--no-update-check` to skip both the startup and shutdown checks entirely. Recommended for CI runs to keep behavior reproducible.
+
+Self-update writes to wherever the running binary lives, so it requires the calling user to have write access to that location. If you installed Kingfisher via a package manager (Homebrew, the `.deb`/`.rpm` packages, the PyPI wrapper, etc.), use that package manager's upgrade command instead — Kingfisher will detect the permission error and tell you so.
+
+Self-update supports all six release platforms: Linux x64/arm64, macOS x64/arm64, and Windows x64/arm64.
 
 ## Exit Codes
 

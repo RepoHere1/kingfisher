@@ -166,8 +166,9 @@ choice:
 
 ## Declarative setup with `kingfisher.yaml`
 
-Long CLI invocations get awkward in CI. Drop a `kingfisher.yaml` next to the
-repo root and Kingfisher auto-discovers it:
+Long CLI invocations get awkward in CI. Drop a `kingfisher.yaml` next to
+the repo root and pass `--config ./kingfisher.yaml` so Kingfisher loads
+it (the file is never auto-discovered — the path must be explicit):
 
 ```yaml
 alerts:

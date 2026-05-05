@@ -7,7 +7,7 @@ Guidance for coding agents working in this repository.
 Kingfisher is an open-source secret scanner and live secret validator written in Rust by MongoDB. It detects, validates, and helps remediate leaked API keys, tokens, and credentials across code repositories, git history, and integrated platforms.
 
 Key capabilities:
-- Secret detection with 942 built-in rules (820 standalone detectors + 122 dependent rules; 484 standalone detectors include live validation as of 2026-04-24)
+- Secret detection with 950 built-in rules (826 standalone detectors + 124 dependent rules; 485 standalone detectors include live validation as of 2026-05-04)
 - Live credential validation against provider APIs
 - Direct secret revocation from CLI
 - Blast radius mapping (AWS, GCP, Azure, GitHub, GitLab, Slack)

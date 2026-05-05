@@ -61,7 +61,9 @@ use crate::cli::commands::output::ReportOutputFormat;
 use crate::cli::commands::scan::ConfidenceLevel;
 use crate::cli::global::TlsMode;
 
-/// File name auto-discovered when the user does not pass `--config`.
+/// Conventional file name when users save a project-local config. The path
+/// must still be passed explicitly via `--config`; nothing in the binary
+/// auto-loads a file with this name.
 pub const DEFAULT_CONFIG_NAME: &str = "kingfisher.yaml";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -252,7 +254,7 @@ pub struct GlobalConfig {
 }
 
 // ----------------------------------------------------------------------------
-// git: clone behavior for git scans.
+// git: clone behavior + provider API roots for git scans.
 // ----------------------------------------------------------------------------
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -261,6 +263,17 @@ pub struct GitConfig {
     pub keep_clones: Option<bool>,
     pub repo_clone_limit: Option<usize>,
     pub include_contributors: Option<bool>,
+    /// GitHub Enterprise / self-hosted GitHub API root used during enumeration
+    /// and cloning. Equivalent to `--github-api-url` on the bare `scan` form
+    /// or `--api-url` on `kingfisher scan github`. For *validation* of
+    /// discovered tokens against the same instance, set
+    /// `global.endpoints` (e.g. `github=https://ghe.example.com`).
+    pub github_api_url: Option<String>,
+    /// Self-hosted GitLab API root used during enumeration and cloning.
+    /// Equivalent to `--gitlab-api-url`. Pair with a matching
+    /// `global.endpoints` `gitlab=...` entry to also redirect token
+    /// validation to the same instance.
+    pub gitlab_api_url: Option<String>,
 }
 
 // ----------------------------------------------------------------------------
@@ -364,10 +377,6 @@ impl From<ReportOutputFormat> for ConfigReportFormat {
     }
 }
 
-/// Cap on `discover_path` upward walks. Avoids unbounded directory traversal
-/// on networked filesystems or pathological mount layouts.
-const DISCOVER_MAX_DEPTH: usize = 32;
-
 /// Parse YAML text into a config struct, validating webhook URLs, regex
 /// patterns, range-bounded scalars, and endpoint formats so config errors
 /// surface at the `--config` site rather than mid-scan.
@@ -440,33 +449,22 @@ fn validate(cfg: &KingfisherConfig) -> Result<()> {
             .with_context(|| format!("global.endpoints[{idx}] URL is not valid"))?;
     }
 
+    // git.github_api_url / git.gitlab_api_url — must parse as URLs.
+    if let Some(u) = &cfg.git.github_api_url {
+        url::Url::parse(u).context("git.github_api_url is not a valid URL")?;
+    }
+    if let Some(u) = &cfg.git.gitlab_api_url {
+        url::Url::parse(u).context("git.gitlab_api_url is not a valid URL")?;
+    }
+
     // alerts.defaults.report_url already checked above.
 
     Ok(())
 }
 
-/// Walk upward from `start` looking for `kingfisher.yaml` in each ancestor
-/// directory. Returns the absolute path when found. Performs *no* file reads —
-/// the caller does the read once it has decided which file to use. Capped at
-/// [`DISCOVER_MAX_DEPTH`] levels to bound the walk on networked filesystems.
-pub fn discover_path(start: &std::path::Path) -> Option<std::path::PathBuf> {
-    let mut current = start.to_path_buf();
-    for _ in 0..=DISCOVER_MAX_DEPTH {
-        let candidate = current.join(DEFAULT_CONFIG_NAME);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if !current.pop() {
-            return None;
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn parse_minimal_alerts() {
@@ -547,6 +545,8 @@ git:
   clone_dir: "./clones"
   keep_clones: true
   repo_clone_limit: 50
+  github_api_url: https://ghe.example.com/api/v3/
+  gitlab_api_url: https://gitlab.example.com/
 "#;
         let cfg = parse_str(yaml).unwrap();
         assert!(matches!(cfg.scan.confidence, Some(ConfigConfidence::High)));
@@ -569,6 +569,20 @@ git:
         assert_eq!(cfg.global.endpoints.len(), 1);
         assert_eq!(cfg.git.clone_dir.as_deref().map(|p| p.to_str().unwrap()), Some("./clones"));
         assert_eq!(cfg.git.keep_clones, Some(true));
+        assert_eq!(cfg.git.github_api_url.as_deref(), Some("https://ghe.example.com/api/v3/"));
+        assert_eq!(cfg.git.gitlab_api_url.as_deref(), Some("https://gitlab.example.com/"));
+    }
+
+    #[test]
+    fn invalid_git_github_api_url_is_rejected() {
+        let err = parse_str("git:\n  github_api_url: 'not_a_url'\n").unwrap_err();
+        assert!(format!("{err:#}").contains("git.github_api_url"));
+    }
+
+    #[test]
+    fn invalid_git_gitlab_api_url_is_rejected() {
+        let err = parse_str("git:\n  gitlab_api_url: 'also not a url'\n").unwrap_err();
+        assert!(format!("{err:#}").contains("git.gitlab_api_url"));
     }
 
     #[test]
@@ -699,26 +713,5 @@ git: {}
     fn endpoint_with_empty_provider_is_rejected() {
         let err = parse_str("global:\n  endpoints:\n    - '=https://example.com/'\n").unwrap_err();
         assert!(format!("{err:#}").contains("global.endpoints[0]"));
-    }
-
-    #[test]
-    fn discover_walks_upward() {
-        let temp = TempDir::new().unwrap();
-        let nested = temp.path().join("a/b/c");
-        std::fs::create_dir_all(&nested).unwrap();
-        let cfg_path = temp.path().join(DEFAULT_CONFIG_NAME);
-        std::fs::write(&cfg_path, "alerts: { webhooks: [] }\n").unwrap();
-        let found = discover_path(&nested).unwrap();
-        assert_eq!(
-            std::fs::canonicalize(&found).unwrap(),
-            std::fs::canonicalize(&cfg_path).unwrap()
-        );
-    }
-
-    #[test]
-    fn discover_returns_none_when_absent() {
-        let temp = TempDir::new().unwrap();
-        let found = discover_path(temp.path());
-        assert!(found.is_none());
     }
 }

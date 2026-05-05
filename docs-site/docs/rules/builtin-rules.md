@@ -1,12 +1,12 @@
 ---
 title: "Built-in Rules List"
-description: "Complete list of all 945 built-in secret detection rules in Kingfisher. Searchable and filterable by provider, confidence level, and validation support."
+description: "Complete list of all 950 built-in secret detection rules in Kingfisher. Searchable and filterable by provider, confidence level, and validation support."
 ---
 
 # Built-in Rules
 
-Kingfisher ships with **945 detection rules** across **581 providers**
-(822 detectors + 123 dependent rules).
+Kingfisher ships with **950 detection rules** across **583 providers**
+(826 detectors + 124 dependent rules).
 Of these, **485** include live validation and **50** support direct revocation.
 
 !!! tip "Search"
@@ -505,6 +505,22 @@ Of these, **485** include live validation and **50** support direct revocation.
 <td><code>kingfisher.atlassian.3</code></td>
 <td>Medium</td>
 <td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>HTTP Basic Authorization Header</td>
+<td><code>kingfisher.auth.1</code></td>
+<td>Medium</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>HTTP Bearer Authorization Header (non-JWT)</td>
+<td><code>kingfisher.auth.2</code></td>
+<td>Medium</td>
+<td></td>
 <td></td>
 </tr>
 <tr>
@@ -4833,6 +4849,30 @@ Of these, **485** include live validation and **50** support direct revocation.
 <td><code>kingfisher.ollama.1</code></td>
 <td>Medium</td>
 <td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>Onelogin</td>
+<td>OneLogin Client ID</td>
+<td><code>kingfisher.onelogin.1</code></td>
+<td>Medium</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Onelogin</td>
+<td>OneLogin Client Secret</td>
+<td><code>kingfisher.onelogin.2</code></td>
+<td>Medium</td>
+<td>Yes</td>
+<td></td>
+</tr>
+<tr>
+<td>Onelogin</td>
+<td>OneLogin Tenant Domain</td>
+<td><code>kingfisher.onelogin.3</code></td>
+<td>Medium</td>
+<td></td>
 <td></td>
 </tr>
 <tr>

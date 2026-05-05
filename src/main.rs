@@ -298,31 +298,24 @@ fn setup_logging(global_args: &GlobalArgs) {
 }
 
 /// Resolve and read a `kingfisher.yaml` project config.
-/// - Explicit `--config <PATH>` is required to exist; missing/unreadable is an error.
-/// - Otherwise we walk up from CWD looking for `kingfisher.yaml`. Missing is fine.
+///
+/// The config file is loaded **only** when the user passes `--config <PATH>`
+/// explicitly. There is intentionally no auto-discovery — relying on a
+/// `kingfisher.yaml` that happens to sit in the cwd (or any ancestor
+/// directory) makes scan results depend on where the binary was invoked
+/// from, which is too easy to get wrong in CI. If the explicit path is
+/// missing or fails to parse, that is a fatal error.
 fn load_project_config(
     explicit: Option<&std::path::Path>,
 ) -> Result<Option<kingfisher::cli::config::KingfisherConfig>> {
-    let path = match explicit {
-        Some(p) => Some(p.to_path_buf()),
-        None => {
-            let cwd = std::env::current_dir().context("read CWD for config discovery")?;
-            kingfisher::cli::config::discover_path(&cwd)
-        }
-    };
-    match path {
-        Some(p) => {
-            let bytes =
-                std::fs::read(&p).with_context(|| format!("read config {}", p.display()))?;
-            let yaml = String::from_utf8(bytes)
-                .with_context(|| format!("config {} is not UTF-8", p.display()))?;
-            let cfg = kingfisher::cli::config::parse_str(&yaml)
-                .with_context(|| format!("parse config {}", p.display()))?;
-            info!("loaded config from {}", p.display());
-            Ok(Some(cfg))
-        }
-        None => Ok(None),
-    }
+    let Some(p) = explicit else { return Ok(None) };
+    let bytes = std::fs::read(p).with_context(|| format!("read config {}", p.display()))?;
+    let yaml =
+        String::from_utf8(bytes).with_context(|| format!("config {} is not UTF-8", p.display()))?;
+    let cfg = kingfisher::cli::config::parse_str(&yaml)
+        .with_context(|| format!("parse config {}", p.display()))?;
+    info!("loaded config from {}", p.display());
+    Ok(Some(cfg))
 }
 
 /// Merge config-file values into clap-parsed args.
@@ -351,6 +344,24 @@ fn apply_config(
             Some(ValueSource::DefaultValue) => true,
             _ => false,
         }
+    }
+
+    /// Like `config_wins`, but also inspects a nested provider subcommand's
+    /// `--api-url` flag. The github/gitlab provider subcommands carry their
+    /// own `api_url` arg (id `api_url`) that gets propagated to
+    /// `scan_args.input_specifier_args.{github,gitlab}_api_url` in
+    /// `into_operation()`. If that nested flag was user-supplied, the config
+    /// must NOT clobber it.
+    fn api_url_config_wins(
+        matches: Option<&clap::ArgMatches>,
+        outer_id: &str,
+        subcommand: &str,
+    ) -> bool {
+        if !config_wins(matches, outer_id) {
+            return false;
+        }
+        let sub = matches.and_then(|m| m.subcommand_matches(subcommand));
+        config_wins(sub, "api_url")
     }
 
     // ---------- Filters: existing v1 list-typed merges ----------------------
@@ -631,6 +642,31 @@ fn apply_config(
         if config_wins(scan_matches, "include_contributors") {
             scan_args.input_specifier_args.include_contributors = v;
         }
+    }
+    // Provider API roots for enumeration / cloning. We accept the YAML value
+    // as `String` (the schema serializer keeps it stable across `Url`'s
+    // trailing-slash normalization), then parse to a `Url` for the runtime
+    // field. parse_str() already validated this — `unwrap_or_default()`
+    // would mask a real config bug, so we re-parse and *fail loud* if the
+    // string somehow does not parse here.
+    //
+    // The provider subcommands (`scan github`, `scan gitlab`) expose their
+    // own `--api-url` flag whose value is propagated into the same runtime
+    // field by `into_operation()`. `api_url_config_wins` checks both the
+    // outer hidden alias and the nested subcommand flag so an explicit
+    // `kingfisher scan github --api-url ...` is never overridden by the
+    // config file.
+    if let Some(u) = &cfg.git.github_api_url
+        && api_url_config_wins(scan_matches, "github_api_url", "github")
+        && let Ok(parsed) = url::Url::parse(u)
+    {
+        scan_args.input_specifier_args.github_api_url = parsed;
+    }
+    if let Some(u) = &cfg.git.gitlab_api_url
+        && api_url_config_wins(scan_matches, "gitlab_api_url", "gitlab")
+        && let Ok(parsed) = url::Url::parse(u)
+    {
+        scan_args.input_specifier_args.gitlab_api_url = parsed;
     }
 }
 
@@ -934,6 +970,26 @@ fn build_config_yaml(
     }
     if user_set(sub_matches, "include_contributors") {
         git.include_contributors = Some(scan_args.input_specifier_args.include_contributors);
+    }
+    // Provider API roots are stored as `Url` on the runtime side; the YAML
+    // schema is a `String` so the emitted file matches exactly what the
+    // user typed. `Url::to_string()` adds a trailing `/` on bare-host URLs
+    // (e.g. `https://gitlab.example.com` → `https://gitlab.example.com/`),
+    // which would silently rewrite the user's input on every `config init`
+    // round-trip. Pull the raw CLI/env string from `ArgMatches` instead so
+    // the emitted YAML matches what the user actually passed.
+    fn raw_arg_string(matches: &clap::ArgMatches, id: &str) -> Option<String> {
+        matches
+            .get_raw(id)
+            .and_then(|mut v| v.next())
+            .and_then(|s| s.to_str())
+            .map(str::to_owned)
+    }
+    if user_set(sub_matches, "github_api_url") {
+        git.github_api_url = raw_arg_string(sub_matches, "github_api_url");
+    }
+    if user_set(sub_matches, "gitlab_api_url") {
+        git.gitlab_api_url = raw_arg_string(sub_matches, "gitlab_api_url");
     }
     cfg.git = git;
 
@@ -2197,6 +2253,82 @@ alerts:
         assert!(matches!(cfg.global.tls_mode, Some(kingfisher::cli::config::ConfigTlsMode::Lax)));
     }
 
+    /// Regression: `config init --github-api-url ... --gitlab-api-url ...`
+    /// must round-trip the strings the user typed. `Url::to_string()` adds
+    /// a trailing `/` to bare-host URLs, so re-serializing the parsed `Url`
+    /// would silently rewrite `https://gitlab.example.com` →
+    /// `https://gitlab.example.com/` on every `config init` run.
+    #[test]
+    fn config_init_preserves_raw_api_url_strings() {
+        use kingfisher::cli::config::parse_str;
+
+        let argv = &[
+            "kingfisher",
+            "config",
+            "init",
+            // Bare host (no trailing slash) — `Url::to_string()` would add one.
+            "--github-api-url",
+            "https://ghe.corp.example.com/api/v3",
+            "--gitlab-api-url",
+            "https://gitlab.corp.example.com",
+        ];
+        let matches = CommandLineArgs::command().try_get_matches_from(argv).unwrap();
+        let parsed = CommandLineArgs::from_arg_matches(&matches).unwrap();
+        let global_args = parsed.global_args.clone();
+        let init_matches =
+            matches.subcommand_matches("config").unwrap().subcommand_matches("init").unwrap();
+        let scan_args = match parsed.command {
+            Command::Config(c) => match c.command {
+                kingfisher::cli::commands::config_command::ConfigSubcommand::Init(args) => {
+                    args.scan_args
+                }
+            },
+            _ => panic!("expected config init"),
+        };
+
+        let yaml = super::build_config_yaml(&scan_args, &global_args, init_matches).unwrap();
+        let cfg = parse_str(&yaml).expect("emitted YAML must round-trip");
+
+        assert_eq!(
+            cfg.git.github_api_url.as_deref(),
+            Some("https://ghe.corp.example.com/api/v3"),
+            "github_api_url must preserve user input verbatim, no trailing-slash rewrite",
+        );
+        assert_eq!(
+            cfg.git.gitlab_api_url.as_deref(),
+            Some("https://gitlab.corp.example.com"),
+            "gitlab_api_url must preserve user input verbatim, no trailing-slash rewrite",
+        );
+
+        // Sanity: when the user *does* pass a trailing slash, that's preserved too.
+        let argv = &[
+            "kingfisher",
+            "config",
+            "init",
+            "--github-api-url",
+            "https://ghe.corp.example.com/api/v3/",
+        ];
+        let matches = CommandLineArgs::command().try_get_matches_from(argv).unwrap();
+        let parsed = CommandLineArgs::from_arg_matches(&matches).unwrap();
+        let global_args = parsed.global_args.clone();
+        let init_matches =
+            matches.subcommand_matches("config").unwrap().subcommand_matches("init").unwrap();
+        let scan_args = match parsed.command {
+            Command::Config(c) => match c.command {
+                kingfisher::cli::commands::config_command::ConfigSubcommand::Init(args) => {
+                    args.scan_args
+                }
+            },
+            _ => panic!("expected config init"),
+        };
+        let yaml = super::build_config_yaml(&scan_args, &global_args, init_matches).unwrap();
+        let cfg = parse_str(&yaml).expect("emitted YAML must round-trip");
+        assert_eq!(
+            cfg.git.github_api_url.as_deref(),
+            Some("https://ghe.corp.example.com/api/v3/"),
+        );
+    }
+
     #[test]
     fn config_init_with_no_flags_emits_placeholder_comment() {
         // Edge case: user runs `kingfisher config init` with no flags. The
@@ -2246,5 +2378,96 @@ global:
         assert_eq!(global_args.tls_mode, kingfisher::cli::global::TlsMode::Lax);
         assert!(global_args.allow_internal_ips);
         assert_eq!(global_args.endpoint.len(), 1);
+    }
+
+    /// Regression test: an explicit `--api-url` on the `scan github`
+    /// subcommand must beat `git.github_api_url` from the config file. The
+    /// flag lives on `GithubScanArgs` (id `api_url`), not on the outer scan
+    /// command — checking only the outer matches misses it and the config
+    /// silently overrode the CLI value.
+    #[test]
+    fn github_subcommand_api_url_beats_config() {
+        let yaml = r#"
+git:
+  github_api_url: https://ghe-from-config.example.com/api/v3/
+"#;
+        let cfg = parse_str(yaml).unwrap();
+        let (args, matches) = parse(&[
+            "kingfisher",
+            "scan",
+            "github",
+            "--organization",
+            "my-org",
+            "--api-url",
+            "https://ghe-from-cli.example.com/api/v3/",
+        ]);
+        let mut global_args = args.global_args.clone();
+        let mut scan_args = into_scan(args);
+        super::apply_config(
+            &mut scan_args,
+            &mut global_args,
+            &cfg,
+            matches.subcommand_matches("scan"),
+        );
+        assert_eq!(
+            scan_args.input_specifier_args.github_api_url.as_str(),
+            "https://ghe-from-cli.example.com/api/v3/",
+        );
+    }
+
+    /// And the inverse: when the user did NOT pass `--api-url` at all,
+    /// `git.github_api_url` from the config should still win over the
+    /// built-in default `https://api.github.com/`.
+    #[test]
+    fn github_config_wins_when_subcommand_api_url_default() {
+        let yaml = r#"
+git:
+  github_api_url: https://ghe-from-config.example.com/api/v3/
+"#;
+        let cfg = parse_str(yaml).unwrap();
+        let (args, matches) = parse(&["kingfisher", "scan", "github", "--organization", "my-org"]);
+        let mut global_args = args.global_args.clone();
+        let mut scan_args = into_scan(args);
+        super::apply_config(
+            &mut scan_args,
+            &mut global_args,
+            &cfg,
+            matches.subcommand_matches("scan"),
+        );
+        assert_eq!(
+            scan_args.input_specifier_args.github_api_url.as_str(),
+            "https://ghe-from-config.example.com/api/v3/",
+        );
+    }
+
+    /// Same precedence story for `scan gitlab --api-url`.
+    #[test]
+    fn gitlab_subcommand_api_url_beats_config() {
+        let yaml = r#"
+git:
+  gitlab_api_url: https://gitlab-from-config.example.com/
+"#;
+        let cfg = parse_str(yaml).unwrap();
+        let (args, matches) = parse(&[
+            "kingfisher",
+            "scan",
+            "gitlab",
+            "--group",
+            "my-group",
+            "--api-url",
+            "https://gitlab-from-cli.example.com/",
+        ]);
+        let mut global_args = args.global_args.clone();
+        let mut scan_args = into_scan(args);
+        super::apply_config(
+            &mut scan_args,
+            &mut global_args,
+            &cfg,
+            matches.subcommand_matches("scan"),
+        );
+        assert_eq!(
+            scan_args.input_specifier_args.gitlab_api_url.as_str(),
+            "https://gitlab-from-cli.example.com/",
+        );
     }
 }
