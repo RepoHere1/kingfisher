@@ -60,7 +60,7 @@ pub fn generate_http_cache_key_parts(
         hasher.update(b"\0");
     }
 
-    format!("HTTP:{:x}", hasher.finalize())
+    format!("HTTP:{}", hex::encode(hasher.finalize()))
 }
 
 /// Parse an HTTP method from a string.

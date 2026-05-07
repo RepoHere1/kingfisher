@@ -187,7 +187,7 @@ pub fn generate_aws_cache_key(aws_access_key_id: &str, aws_secret_access_key: &s
     hasher.update(aws_access_key_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(aws_secret_access_key.as_bytes());
-    format!("AWS:{:x}", hasher.finalize())
+    format!("AWS:{}", hex::encode(hasher.finalize()))
 }
 
 /// Validate AWS credentials format before attempting validation.

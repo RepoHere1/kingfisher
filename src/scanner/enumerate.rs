@@ -546,11 +546,7 @@ fn try_extract_git_blob_archive(
     // correct format (zip-based, gz, tar, ...). decompress_file_to_temp
     // dispatches on extension, so the extension MUST match the actual
     // bytes — using the in-tree filename is the right move.
-    let basename = pb
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("blob")
-        .to_string();
+    let basename = pb.file_name().and_then(|s| s.to_str()).unwrap_or("blob").to_string();
 
     // ── fast path: ZIP-based archives extract entirely in memory ──
     //
@@ -668,10 +664,7 @@ fn try_extract_git_blob_archive(
                         out.push((strip_logical_prefix(logical), bytes));
                     }
                     Err(e) => {
-                        debug!(
-                            "Failed to read extracted entry {}: {e}",
-                            disk_path.display()
-                        );
+                        debug!("Failed to read extracted entry {}: {e}", disk_path.display());
                     }
                 }
             }
@@ -747,9 +740,7 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
             let repo_path = Arc::clone(&repo_path);
             let flag = Arc::clone(&flag);
 
-            move |repo: &mut GixRepo,
-                  md: GitBlobMetadata|
-                  -> Result<Vec<(OriginSet, Blob<'a>)>> {
+            move |repo: &mut GixRepo, md: GitBlobMetadata| -> Result<Vec<(OriginSet, Blob<'a>)>> {
                 if StdInstant::now() > deadline {
                     if flag.swap(true, Ordering::Relaxed) {
                         bail!("__timeout_silenced__");
@@ -777,18 +768,17 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
                             Ok(Some(entries)) => {
                                 let mut out = Vec::with_capacity(entries.len());
                                 for (entry_logical, entry_bytes) in entries {
-                                    let origin = OriginSet::try_from_iter(
-                                        md.first_seen.iter().map(|e| {
+                                    let origin =
+                                        OriginSet::try_from_iter(md.first_seen.iter().map(|e| {
                                             Origin::from_git_repo_with_first_commit(
                                                 Arc::clone(&repo_path),
                                                 Arc::clone(&e.commit_metadata),
                                                 entry_logical.clone(),
                                             )
-                                        }),
-                                    )
-                                    .unwrap_or_else(|| {
-                                        Origin::from_git_repo(Arc::clone(&repo_path)).into()
-                                    });
+                                        }))
+                                        .unwrap_or_else(
+                                            || Origin::from_git_repo(Arc::clone(&repo_path)).into(),
+                                        );
                                     out.push((origin, Blob::from_bytes(entry_bytes)));
                                 }
                                 return Ok(out);

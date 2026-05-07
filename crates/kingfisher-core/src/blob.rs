@@ -11,7 +11,7 @@
 use std::{
     convert::TryInto,
     fs::File,
-    io::{Read, Write},
+    io::Read,
     path::Path,
     sync::{
         Arc, OnceLock,
@@ -235,7 +235,7 @@ impl BlobId {
     pub fn new(input: &[u8]) -> Self {
         const CHUNK: usize = 64 * 1024; // 64KB from start and end
         let mut hasher = Sha1::new();
-        write!(&mut hasher, "blob {}\0", input.len()).unwrap();
+        hasher.update(format!("blob {}\0", input.len()).as_bytes());
         if input.len() <= CHUNK * 2 {
             hasher.update(input);
         } else {
@@ -249,7 +249,7 @@ impl BlobId {
     /// Computes a `BlobId` from the complete bytes (no truncation).
     pub fn compute_from_bytes(bytes: &[u8]) -> Self {
         let mut hasher = Sha1::new();
-        write!(&mut hasher, "blob {}\0", bytes.len()).unwrap();
+        hasher.update(format!("blob {}\0", bytes.len()).as_bytes());
         hasher.update(bytes);
         let digest: [u8; 20] = hasher.finalize().into();
         BlobId(digest)

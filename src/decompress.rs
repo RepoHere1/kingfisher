@@ -18,9 +18,9 @@ use zip::ZipArchive;
 
 /// Formats that are basically a ZIP container.
 pub const ZIP_BASED_FORMATS: &[&str] = &[
-    "zip", "zipx", "jar", "war", "ear", "aar", "apk", "aab", "ipa", "jmod", "jhm", "jnlp",
-    "nupkg", "vsix", "xap", "docx", "xlsx", "pptx", "odt", "ods", "odp", "odg", "odf", "epub",
-    "gadget", "kmz", "widget", "xpi", "sketch", "pages", "key", "numbers", "hwpx",
+    "zip", "zipx", "jar", "war", "ear", "aar", "apk", "aab", "ipa", "jmod", "jhm", "jnlp", "nupkg",
+    "vsix", "xap", "docx", "xlsx", "pptx", "odt", "ods", "odp", "odg", "odf", "epub", "gadget",
+    "kmz", "widget", "xpi", "sketch", "pages", "key", "numbers", "hwpx",
 ];
 
 /// Break `<name>.<outer>.<inner>` into `(Some(outer), Some(inner))`.

@@ -23,7 +23,7 @@ pub fn generate_coinbase_cache_key(cred_name: &str, private_key: &str) -> String
     h.update(cred_name.as_bytes());
     h.update(b"\0");
     h.update(private_key.as_bytes());
-    format!("COINBASE:{:x}", h.finalize())
+    format!("COINBASE:{}", hex::encode(h.finalize()))
 }
 
 pub async fn validate_cdp_api_key(

@@ -32,9 +32,9 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 ignore = "0.4"
 walkdir = "2.5"
 include_dir = "0.7"
-sha1 = "0.10"
-sha2 = "0.10"
-hmac = "0.12"
+sha1 = "0.11"
+sha2 = "0.11"
+hmac = "0.13"
 base32 = "0.5.1"
 base64 = "0.22"
 percent-encoding = "2.3"
@@ -181,9 +181,9 @@ futures = "0.3.31"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3", "const_xxh3"] }
 serde_yaml = "0.9.34"
-hmac = "0.13.0"
+hmac = { workspace = true }
 sha1 = { workspace = true }
-sha2 = "0.11.0"
+sha2 = { workspace = true }
 humantime = "2.3.0"
 path-dedot = "3.1.1"
 quick-xml = { version = "0.39.2", features = ["serde", "serialize"] }
@@ -252,7 +252,7 @@ proptest = "1.9.0"
 [profile.release]
 debug = false
 strip = true
-opt-level = 3           # Maximum optimization for performance
+opt-level = "s" #3           # Maximum optimization for performance
 lto = true              # Enable Link Time Optimization
 codegen-units = 1       # Optimize for size but slower compilation
 panic = "abort"          # Remove unwind tables for panics

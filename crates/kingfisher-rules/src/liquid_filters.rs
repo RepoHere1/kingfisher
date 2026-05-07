@@ -2,7 +2,7 @@
 
 use base64::{Engine, engine::general_purpose};
 use crc32fast::Hasher;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use liquid_core::{
     Display_filter, Error as LiquidError, Expression, Filter, FilterParameters, FilterReflection,
     FromFilterParameters, ParseFilter, Result, Runtime, Value, ValueView,
@@ -536,7 +536,7 @@ static_filter!(
     |input: &dyn ValueView| -> String {
         let mut h = Sha256::new();
         h.update(input.to_kstr().as_bytes());
-        format!("{:x}", h.finalize())
+        hex::encode(h.finalize())
     }
 );
 
@@ -1128,7 +1128,7 @@ pub fn register_all(builder: liquid::ParserBuilder) -> liquid::ParserBuilder {
 #[cfg(test)]
 mod tests {
     use base64::{Engine as _, engine::general_purpose};
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use liquid::{ParserBuilder, object};
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
     use regex::Regex;
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn sha256_filter() {
-        let expect = format!("{:x}", Sha256::digest(b"hello"));
+        let expect = hex::encode(Sha256::digest(b"hello"));
         assert_eq!(render(r#"{{ "hello" | sha256 }}"#), expect);
     }
 

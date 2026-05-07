@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as b64};
 use chrono::Utc;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use http::StatusCode;
 use quick_xml::{Reader, events::Event};
 use reqwest::{Client, header::HeaderValue};
@@ -18,7 +18,7 @@ pub fn generate_azure_cache_key(azure_json: &str) -> String {
     use sha1::{Digest, Sha1};
     let mut h = Sha1::new();
     h.update(azure_json.as_bytes());
-    format!("AZURE:{:x}", h.finalize())
+    format!("AZURE:{}", hex::encode(h.finalize()))
 }
 
 /// Validate Azure Storage credentials without Azure SDK crates.
