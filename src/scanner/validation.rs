@@ -725,7 +725,7 @@ pub async fn run_secret_validation(
                         let mut by_key: FxHashMap<String, Vec<OwnedBlobMatch>> =
                             FxHashMap::default();
                         for om in owned {
-                            by_key.entry(build_cache_key(&om, &dep_vars)).or_default().push(om);
+                            by_key.entry(build_cache_key(&om)).or_default().push(om);
                         }
                         let reps: Vec<_> =
                             by_key.into_iter().map(|(_k, mut v)| (v.remove(0), v)).collect();
@@ -859,17 +859,7 @@ async fn validate_single(
     validation_retries: u32,
     max_body_len: usize,
 ) {
-    // Build key
-    let dep_vars_str = dep_vars
-        .get(om.rule.id())
-        .map(|hm| {
-            let mut sorted: Vec<_> = hm.iter().collect();
-            sorted.sort_by(|(k, _), (k2, _)| k.cmp(k2));
-            sorted.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("|")
-        })
-        .unwrap_or_default();
-    let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.raw_value().to_string());
-    let cache_key = format!("{}|{}|{}", om.rule.name(), capture0, dep_vars_str);
+    let cache_key = build_cache_key(om);
     // Check cache first
     if let Some(cached) = cache.get(&cache_key) {
         om.validation_success = cached.is_valid;
@@ -966,24 +956,29 @@ fn is_counted_validation_status(status: StatusCode) -> bool {
     !matches!(status, StatusCode::CONTINUE | StatusCode::PRECONDITION_REQUIRED)
 }
 
-// Helper to compute the cache key for an OwnedBlobMatch
-fn build_cache_key(
-    om: &OwnedBlobMatch,
-    dep_vars: &FxHashMap<String, Vec<(String, OffsetSpan)>>,
-) -> String {
-    // Build key
-    let dep_vars_str = dep_vars
-        .get(om.rule.id())
-        .map(|hm| {
-            let mut sorted: Vec<_> = hm.iter().collect();
-            sorted.sort_by(|(k, _), (k2, _)| k.cmp(k2));
-            sorted.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("|")
-        })
-        .unwrap_or_default();
-    // For demonstration, we’ll do a simplistic approach
-    // You can adapt from your existing logic
+// Helper to compute the cache key for an OwnedBlobMatch.
+fn build_cache_key(om: &OwnedBlobMatch) -> String {
     let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.raw_value().to_string());
-    format!("{}|{}|{}", om.rule.name(), capture0, dep_vars_str)
+
+    let has_context_dependency = om
+        .rule
+        .syntax()
+        .depends_on_rule
+        .iter()
+        .flatten()
+        .any(|dep| !dep.variable.eq_ignore_ascii_case("TOKEN"));
+    if has_context_dependency {
+        return format!(
+            "{}|{}|{}|{}|{}",
+            om.rule.name(),
+            capture0,
+            om.blob_id,
+            om.matching_input_offset_span.start,
+            om.matching_input_offset_span.end
+        );
+    }
+
+    format!("{}|{}", om.rule.name(), capture0)
 }
 
 fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapCollector>) {
@@ -1006,8 +1001,9 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                 .map(|(_, value, ..)| value.clone())
                 .unwrap_or_default();
 
-            let mut akid = utils::find_closest_variable(&captures, &secret, "TOKEN", "AKID")
-                .unwrap_or_default();
+            let mut akid =
+                utils::find_closest_variable(&captures, secret.as_str(), "TOKEN", "AKID")
+                    .unwrap_or_default();
 
             if akid.is_empty() {
                 akid = extract_akid_from_body(&om.validation_response_body).unwrap_or_default();
@@ -1031,7 +1027,7 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                 .map(|(_, value, ..)| value.clone())
                 .unwrap_or_default();
             let storage_account =
-                utils::find_closest_variable(&captures, &storage_key, "TOKEN", "AZURENAME")
+                utils::find_closest_variable(&captures, storage_key.as_str(), "TOKEN", "AZURENAME")
                     .unwrap_or_default();
 
             let mut storage_account = storage_account;
@@ -1086,9 +1082,13 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                     .find(|(name, ..)| name == "TOKEN")
                     .map(|(_, value, ..)| value.clone())
                     .unwrap_or_default();
-                let mut organization =
-                    utils::find_closest_variable(&captures, &token, "TOKEN", "AZURE_DEVOPS_ORG")
-                        .unwrap_or_default();
+                let mut organization = utils::find_closest_variable(
+                    &captures,
+                    token.as_str(),
+                    "TOKEN",
+                    "AZURE_DEVOPS_ORG",
+                )
+                .unwrap_or_default();
                 if organization.is_empty() {
                     organization = extract_azure_devops_org_from_body(&om.validation_response_body)
                         .unwrap_or_default();
@@ -1105,7 +1105,7 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                     .map(|(_, value, ..)| value.clone())
                     .unwrap_or_default();
                 let access_key =
-                    utils::find_closest_variable(&captures, &secret_key, "TOKEN", "AKID")
+                    utils::find_closest_variable(&captures, secret_key.as_str(), "TOKEN", "AKID")
                         .or_else(|| om.dependent_captures.get("AKID").cloned())
                         .unwrap_or_default();
 
@@ -1119,14 +1119,22 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                     .find(|(name, ..)| name == "TOKEN")
                     .map(|(_, value, ..)| value.clone())
                     .unwrap_or_default();
-                let access_key =
-                    utils::find_closest_variable(&captures, &secret_key, "TOKEN", "STS_AKID")
-                        .or_else(|| om.dependent_captures.get("STS_AKID").cloned())
-                        .unwrap_or_default();
-                let session_token =
-                    utils::find_closest_variable(&captures, &secret_key, "TOKEN", "SECURITY_TOKEN")
-                        .or_else(|| om.dependent_captures.get("SECURITY_TOKEN").cloned())
-                        .unwrap_or_default();
+                let access_key = utils::find_closest_variable(
+                    &captures,
+                    secret_key.as_str(),
+                    "TOKEN",
+                    "STS_AKID",
+                )
+                .or_else(|| om.dependent_captures.get("STS_AKID").cloned())
+                .unwrap_or_default();
+                let session_token = utils::find_closest_variable(
+                    &captures,
+                    secret_key.as_str(),
+                    "TOKEN",
+                    "SECURITY_TOKEN",
+                )
+                .or_else(|| om.dependent_captures.get("SECURITY_TOKEN").cloned())
+                .unwrap_or_default();
 
                 if !access_key.is_empty() && !secret_key.is_empty() && !session_token.is_empty() {
                     collector.record_alibaba(

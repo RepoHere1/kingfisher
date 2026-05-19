@@ -979,11 +979,7 @@ fn build_config_yaml(
     // round-trip. Pull the raw CLI/env string from `ArgMatches` instead so
     // the emitted YAML matches what the user actually passed.
     fn raw_arg_string(matches: &clap::ArgMatches, id: &str) -> Option<String> {
-        matches
-            .get_raw(id)
-            .and_then(|mut v| v.next())
-            .and_then(|s| s.to_str())
-            .map(str::to_owned)
+        matches.get_raw(id).and_then(|mut v| v.next()).and_then(|s| s.to_str()).map(str::to_owned)
     }
     if user_set(sub_matches, "github_api_url") {
         git.github_api_url = raw_arg_string(sub_matches, "github_api_url");
@@ -2326,6 +2322,7 @@ alerts:
         assert_eq!(
             cfg.git.github_api_url.as_deref(),
             Some("https://ghe.corp.example.com/api/v3/"),
+            "github_api_url must preserve a user-supplied trailing slash",
         );
     }
 

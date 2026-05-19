@@ -142,7 +142,7 @@ pub fn generate_gcp_cache_key(gcp_json: &str) -> String {
     use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(gcp_json.as_bytes());
-    format!("GCP:{:x}", hasher.finalize())
+    format!("GCP:{}", hex::encode(hasher.finalize()))
 }
 
 impl GcpValidator {

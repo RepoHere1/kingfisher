@@ -147,5 +147,5 @@ pub fn generate_mongodb_cache_key(mongodb_uri: &str) -> String {
     use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(mongodb_uri.as_bytes());
-    format!("MongoDB:{:x}", hasher.finalize())
+    format!("MongoDB:{}", hex::encode(hasher.finalize()))
 }
