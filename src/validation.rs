@@ -1551,9 +1551,7 @@ fn aws_akid_candidates(
 ) -> Vec<String> {
     let mut candidates = Vec::new();
 
-    if let Some(closest) =
-        utils::find_closest_variable(captured_values, &secret.to_string(), "TOKEN", "AKID")
-    {
+    if let Some(closest) = utils::find_closest_variable(captured_values, secret, "TOKEN", "AKID") {
         candidates.push((0usize, closest));
     }
 

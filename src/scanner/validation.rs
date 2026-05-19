@@ -725,7 +725,7 @@ pub async fn run_secret_validation(
                         let mut by_key: FxHashMap<String, Vec<OwnedBlobMatch>> =
                             FxHashMap::default();
                         for om in owned {
-                            by_key.entry(build_cache_key(&om, &dep_vars)).or_default().push(om);
+                            by_key.entry(build_cache_key(&om)).or_default().push(om);
                         }
                         let reps: Vec<_> =
                             by_key.into_iter().map(|(_k, mut v)| (v.remove(0), v)).collect();
@@ -859,7 +859,7 @@ async fn validate_single(
     validation_retries: u32,
     max_body_len: usize,
 ) {
-    let cache_key = build_cache_key(om, dep_vars);
+    let cache_key = build_cache_key(om);
     // Check cache first
     if let Some(cached) = cache.get(&cache_key) {
         om.validation_success = cached.is_valid;
@@ -956,12 +956,8 @@ fn is_counted_validation_status(status: StatusCode) -> bool {
     !matches!(status, StatusCode::CONTINUE | StatusCode::PRECONDITION_REQUIRED)
 }
 
-// Helper to compute the cache key for an OwnedBlobMatch
-fn build_cache_key(
-    om: &OwnedBlobMatch,
-    dep_vars: &FxHashMap<String, Vec<(String, OffsetSpan)>>,
-) -> String {
-    // Build key
+// Helper to compute the cache key for an OwnedBlobMatch.
+fn build_cache_key(om: &OwnedBlobMatch) -> String {
     let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.raw_value().to_string());
 
     let has_context_dependency = om
@@ -982,16 +978,7 @@ fn build_cache_key(
         );
     }
 
-    let dep_vars_str = dep_vars
-        .get(om.rule.id())
-        .map(|hm| {
-            let mut sorted: Vec<_> = hm.iter().collect();
-            sorted.sort_by(|(k, _), (k2, _)| k.cmp(k2));
-            sorted.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("|")
-        })
-        .unwrap_or_default();
-
-    format!("{}|{}|{}", om.rule.name(), capture0, dep_vars_str)
+    format!("{}|{}", om.rule.name(), capture0)
 }
 
 fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapCollector>) {
