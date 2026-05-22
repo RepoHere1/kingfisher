@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.101.0]
+- Fixed asymmetric JWT validation panics by using a single `jsonwebtoken` crypto backend and adding RS256 regression coverage. Thanks @AgentEnder. [#386](https://github.com/mongodb/kingfisher/pull/386)
+- Validator panics now fail that validation result instead of crashing the scan, with panic payloads kept out of cached and user-visible validation responses. Thanks @AgentEnder. [#387](https://github.com/mongodb/kingfisher/pull/387)
+- Reduced `failed to spawn thread` errors in validation-heavy scans by capping Tokio blocking pools for the main and artifact-fetcher runtimes and raising the Unix soft `RLIMIT_NPROC` before worker startup.
+
 ## [v1.100.0]
 - Archive scanning now reaches inside Android/iOS app packages: added `apk`, `aab`, and `ipa` to the recognized ZIP-based archive formats so secrets embedded in APK/AAB/IPA contents (e.g. `classes*.dex`, `res/values/strings.xml`) are extracted and matched.
 - Git repository scans now extract archive blobs encountered in the object database, not just on the filesystem. Previously a `.zip`/`.jar`/`.apk`/`.tar.gz` committed to a repo was scanned as raw compressed bytes, so secrets inside it were invisible. The git enumerator fans each archive entry out as a synthetic `<archive>!<entry>` blob with the original commit metadata. Honors `--no-extract-archives` for opt-out.
