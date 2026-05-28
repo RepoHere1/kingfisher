@@ -403,7 +403,12 @@ fn handle_asar_archive_in_memory(buffer: &[u8], archive_path: &Path) -> Result<C
         Ok(reader) => {
             let mut contents = Vec::new();
             for (path_in_asar, file) in reader.files() {
-                let inner_path = path_in_asar.to_string_lossy().to_string();
+                let inner_path = path_in_asar.to_string_lossy().replace('\\', "/");
+                if !is_safe_extract_path(Path::new(&inner_path)) {
+                    tracing::warn!("unsafe asar path: {inner_path}");
+                    continue;
+                }
+
                 let logical_path = format!("{}!{}", archive_path.display(), inner_path);
                 let data = file.data();
                 let take = data.len().min(MAX_ASAR_ENTRY_BYTES);
@@ -420,6 +425,28 @@ fn handle_asar_archive_in_memory(buffer: &[u8], archive_path: &Path) -> Result<C
         }
         Err(_) => Ok(CompressedContent::Archive(Vec::new())),
     }
+}
+
+fn materialize_in_memory_archive_entries(
+    files: &[(String, Vec<u8>)],
+    base_dir: &Path,
+) -> Result<()> {
+    for (name, data) in files {
+        let rel = name.split_once('!').map(|(_, sub)| sub).unwrap_or(name.as_str());
+        let normalized_rel = rel.replace('\\', "/");
+        let rel_path = Path::new(&normalized_rel);
+        if !is_safe_extract_path(rel_path) {
+            tracing::warn!("unsafe archive path: {normalized_rel}");
+            continue;
+        }
+
+        let p = base_dir.join(rel_path);
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(p, data)?;
+    }
+    Ok(())
 }
 
 /// Validate and open a file for reading, checking for path traversal attacks.
@@ -582,14 +609,7 @@ pub fn decompress_file_to_temp(path: &Path) -> Result<(CompressedContent, TempDi
                 }
             }
         }
-        for (name, data) in files {
-            let rel = name.split_once('!').map(|(_, sub)| sub).unwrap_or(name);
-            let p = temp_dir.path().join(rel.replace('\\', "/"));
-            if let Some(parent) = p.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(p, data)?;
-        }
+        materialize_in_memory_archive_entries(files, temp_dir.path())?;
     } else if let CompressedContent::ArchiveFiles(ref mut entries) = content {
         if let Some(prefix) = &prefix_for_replace {
             let prefix_str = prefix.display().to_string();
@@ -614,7 +634,10 @@ mod tests {
     use tempfile::tempdir;
     use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-    use super::{CompressedContent, decompress_file_to_temp, decompress_once};
+    use super::{
+        CompressedContent, decompress_file_to_temp, decompress_once,
+        materialize_in_memory_archive_entries,
+    };
 
     /// 1) Fully unpack:
     ///    - 1st decompress `.gz` -- get a `.tar` file
@@ -787,6 +810,68 @@ mod tests {
             panic!("expected ArchiveFiles for zip archive, got {:?}", content);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn materialize_in_memory_archive_entries_skips_unsafe_paths() -> anyhow::Result<()> {
+        let sandbox = tempdir()?;
+        let extract_root = sandbox.path().join("extract");
+        std::fs::create_dir(&extract_root)?;
+
+        let outside_parent = sandbox.path().join("outside-parent.txt");
+        let outside_absolute = sandbox.path().join("outside-absolute.txt");
+        let entries = vec![
+            ("archive.asar!nested/safe.txt".to_string(), b"safe".to_vec()),
+            ("archive.asar!../outside-parent.txt".to_string(), b"bad".to_vec()),
+            (format!("archive.asar!{}", outside_absolute.display()), b"bad".to_vec()),
+        ];
+
+        materialize_in_memory_archive_entries(&entries, &extract_root)?;
+
+        assert_eq!(std::fs::read(extract_root.join("nested/safe.txt"))?, b"safe");
+        assert!(!outside_parent.exists());
+        assert!(!outside_absolute.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn decompress_asar_skips_parent_dir_entries() -> anyhow::Result<()> {
+        use asar::AsarWriter;
+
+        let mut writer = AsarWriter::new();
+        writer.write_file("safe.txt", b"safe", false)?;
+        writer.write_file("aa/bb/escape.txt", b"bad", false)?;
+
+        let mut archive = Vec::new();
+        writer.finalize(&mut archive)?;
+
+        let json_size = u32::from_le_bytes(archive[12..16].try_into().unwrap()) as usize;
+        let header = &mut archive[16..16 + json_size];
+        let header_str = std::str::from_utf8(header)?;
+        assert!(header_str.contains("\"aa\""));
+        assert!(header_str.contains("\"bb\""));
+
+        let patched = header_str.replace("\"aa\"", "\"..\"").replace("\"bb\"", "\"..\"");
+        assert_eq!(patched.len(), header_str.len());
+        header.copy_from_slice(patched.as_bytes());
+
+        let dir = tempdir()?;
+        let asar_path = dir.path().join("malicious.asar");
+        std::fs::write(&asar_path, archive)?;
+
+        let (content, _tmp) = decompress_file_to_temp(&asar_path)?;
+        let CompressedContent::Archive(entries) = content else {
+            panic!("expected Archive for asar");
+        };
+
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries
+                .iter()
+                .any(|(name, data)| name.ends_with("!safe.txt") && data.as_slice() == b"safe")
+        );
+        assert!(!entries.iter().any(|(name, _)| name.contains("..")));
         Ok(())
     }
 

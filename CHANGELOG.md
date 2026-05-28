@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [v1.102.0]
+- Security: hardened ASAR and in-memory archive extraction to skip traversal or absolute entry paths before writing to the temp extraction directory.
 - Added 3 detection and validation rules for Cognition Devin API credentials: `kingfisher.devin.1` (legacy personal keys, `apk_user_` prefix), `kingfisher.devin.2` (legacy service keys, `apk_` prefix), and `kingfisher.devin.3` (v3 service-user tokens, `cog_` prefix / RFC 4648 base32). Live validation uses `GET /v1/sessions` for `apk_*` keys and `GET /v3/self` for `cog_` tokens.
 - Added `kingfisher scan docker --archive <image.tar>` for scanning saved Docker/OCI image archives directly, including OCI-layout `docker save` output and compressed tar archives.
 
